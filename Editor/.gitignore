@@ -1,0 +1,6 @@
+*.json
+*.uasset
+*.asset
+*.json.meta
+*.uasset.meta
+*.asset.meta

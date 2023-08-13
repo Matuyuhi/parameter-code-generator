@@ -121,12 +121,18 @@ namespace ParamGenerator.Editor
             
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("className");
-            className = EditorGUILayout.TextField(className);
+            className = Path.GetFileNameWithoutExtension(output);
+            EditorGUILayout.LabelField(className);
+            
             EditorGUILayout.EndHorizontal();
             
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("namespace");
             nameSpace = EditorGUILayout.TextField(nameSpace);
+            if (string.IsNullOrEmpty(nameSpace))
+            {
+                canApply = false;
+            }
             EditorGUILayout.EndHorizontal();
         
             parameterData.parameters = parameterList.ToArray();

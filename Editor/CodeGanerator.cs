@@ -1,6 +1,8 @@
 using System;
 using System.IO;
+using System.Reflection;
 using System.Text.RegularExpressions;
+using Unity.VisualScripting;
 using UnityEditor;
 using UnityEngine;
 
@@ -8,14 +10,18 @@ namespace ParamGenerator.Editor
 {
     public static class CodeGenerator
     {
+        private static JsonObject jsonObject;
+        private static string outputPath;
 
         public static void GenerateCode(string jsonPath, string outputPath)
         {
             try
             {
+                CodeGenerator.outputPath = outputPath;
+                
                 string json = File.ReadAllText(jsonPath);
 
-                var jsonObject = JsonUtility.FromJson<JsonObject>(json);
+                jsonObject = JsonUtility.FromJson<JsonObject>(json);
 
                 string code = $"using UnityEngine;\n";
                 string doName = "";
@@ -28,7 +34,7 @@ namespace ParamGenerator.Editor
                 {
                     throw new Exception("Not Found ClassName");
                 }
-                code += $"public class {jsonObject.className}\n{doName}{{\n";
+                code += $"public class {jsonObject.className} : ScriptableObject\n{doName}{{\n";
                 foreach (var parameter in jsonObject.parameters)
                 {
                     string key = parameter.key;
@@ -39,7 +45,7 @@ namespace ParamGenerator.Editor
                         continue;
                     }
                     string value = ConvertValue(type, valueString);
-                    code += $"    {doName}public static {type} {key} {{ get; }} = {value};\n\n";
+                    code += $"    {doName}public {type} {key} = {value};\n\n";
                 }
 
                 if (jsonObject.nameSpace != "")
@@ -50,6 +56,12 @@ namespace ParamGenerator.Editor
                 code += "}";
                 
                 File.WriteAllText(outputPath, code);
+                AssetDatabase.Refresh();
+
+                EditorApplication.update += WaitForCompile;
+
+
+
             }
             catch (Exception e)
             {
@@ -61,6 +73,57 @@ namespace ParamGenerator.Editor
                 AssetDatabase.Refresh();
             }
         }
+
+        private static void WaitForCompile()
+        {
+            try
+            {
+                if (EditorApplication.isCompiling)
+                    return;
+
+                EditorApplication.update -= WaitForCompile;
+            
+                string relativePath = outputPath.Replace(Application.dataPath, "Assets");
+                string qualifiedTypeName = (jsonObject.nameSpace != "" ? jsonObject.nameSpace + "." : "") + jsonObject.className;
+                Type generatedType = null;
+
+                foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    foreach (Type type in asm.GetTypes())
+                    {
+                        if (type.FullName == qualifiedTypeName)
+                        {
+                            generatedType = type;
+                            break;
+                        }
+                    }
+
+                    if (generatedType != null)
+                        break;
+                }
+
+                if (generatedType != null)
+                {
+                    ScriptableObject asset = ScriptableObject.CreateInstance(generatedType);
+                    string assetPath = Path.Combine(Path.GetDirectoryName(relativePath) ?? string.Empty, jsonObject.className + ".asset");
+                    AssetDatabase.CreateAsset(asset, assetPath);
+                    Debug.Log("Generated type: " + generatedType);
+                    Debug.Log("Asset path: " + assetPath);
+
+                    AssetDatabase.Refresh();
+                }
+                else
+                {
+                    Debug.LogError("Generated type not found");
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError(e);
+            }
+        }
+        
+
 
         private static string ConvertValue(string type, string valueString)
         {
