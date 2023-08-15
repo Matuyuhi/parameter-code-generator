@@ -12,12 +12,14 @@ namespace ParamGenerator.Editor
     {
         private static JsonObject jsonObject;
         private static string outputPath;
+        private static string outputAsset;
 
-        public static void GenerateCode(string jsonPath, string outputPath)
+        public static void GenerateCode(string jsonPath, string outputPath, string assetPath)
         {
             try
             {
                 CodeGenerator.outputPath = outputPath;
+                outputAsset = assetPath;
                 
                 string json = File.ReadAllText(jsonPath);
 
@@ -82,8 +84,7 @@ namespace ParamGenerator.Editor
                     return;
 
                 EditorApplication.update -= WaitForCompile;
-            
-                string relativePath = outputPath.Replace(Application.dataPath, "Assets");
+                
                 string qualifiedTypeName = (jsonObject.nameSpace != "" ? jsonObject.nameSpace + "." : "") + jsonObject.className;
                 Type generatedType = null;
 
@@ -105,7 +106,7 @@ namespace ParamGenerator.Editor
                 if (generatedType != null)
                 {
                     ScriptableObject asset = ScriptableObject.CreateInstance(generatedType);
-                    string assetPath = Path.Combine(Path.GetDirectoryName(relativePath) ?? string.Empty, jsonObject.className + ".asset");
+                    string assetPath = outputAsset;
                     AssetDatabase.CreateAsset(asset, assetPath);
                     Debug.Log("Generated type: " + generatedType);
                     Debug.Log("Asset path: " + assetPath);
@@ -160,8 +161,9 @@ namespace ParamGenerator.Editor
     public class JsonObject
     {
         public ParameterPair[] parameters;
-        public string outputFileName;
+        public string csharpPath;
         public string className;
         public string nameSpace;
+        public string assetPath;
     }
 }

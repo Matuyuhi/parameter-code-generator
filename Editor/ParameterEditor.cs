@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -22,47 +23,44 @@ namespace ParamGenerator.Editor
         private void OnEnable()
         {
             string json = File.ReadAllText(jsonPath);
+            if (json == "") return;
             parameterData = JsonUtility.FromJson<JsonObject>(json);
         }
 
         private void OnGUI()
         {
+            if (jsonPath == "" || parameterData == null) return;
+
             EditorGUILayout.LabelField(Path.GetFileName(jsonPath), EditorStyles.boldLabel);
-            GUILayout.Space(30);
-            List<ParameterPair> parameterList = new List<ParameterPair>(parameterData.parameters);
-            string output = parameterData.outputFileName;
-            string className = parameterData.className;
-            string nameSpace = parameterData.nameSpace;
-            
+
+            GUILayout.Space(10);
             EditorGUILayout.LabelField("Edit Parameters", EditorStyles.boldLabel);
-        
+
+            GUILayout.Space(10);
+            EditorGUILayout.BeginVertical("box"); // Enclose in a box for visual grouping
+
             string[] options = { "float", "int", "string", "Vector3", "Vector2" }; // サポートする型のオプション
 
-            bool canApply = true;
-
-            foreach (var parameter in parameterList.ToArray())
+            foreach (var parameter in parameterData.parameters)
             {
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.Space(30);
-                parameter.key = EditorGUILayout.TextField(parameter.key);
-                EditorGUILayout.Space();
+
+                parameter.key = EditorGUILayout.TextField(parameter.key, GUILayout.Width(80));
                 int selectedIndex = EditorGUILayout.Popup(Array.IndexOf(options, parameter.type), options);
-                if (selectedIndex < 0) {
+                if (selectedIndex < 0)
+                {
                     selectedIndex = 0;
                 }
+
                 parameter.type = options[selectedIndex];
-                EditorGUILayout.Space();
-                // 選択された型に応じた入力フィールドを表示
-                bool tried;
+
                 switch (parameter.type)
                 {
                     case "float":
-                        tried = float.TryParse(parameter.value, out var valueFloat);
-                        parameter.value = EditorGUILayout.FloatField(tried ? valueFloat : 0f).ToString();
+                        parameter.value = EditorGUILayout.FloatField(float.Parse(parameter.value)).ToString();
                         break;
                     case "int":
-                        tried = int.TryParse(parameter.value, out var valueInt);
-                        parameter.value = EditorGUILayout.IntField(tried ? valueInt : 0).ToString();
+                        parameter.value = EditorGUILayout.IntField(int.Parse(parameter.value)).ToString();
                         break;
                     case "string":
                         parameter.value = EditorGUILayout.TextField(parameter.value);
@@ -76,99 +74,73 @@ namespace ParamGenerator.Editor
                         parameter.value = EditorGUILayout.Vector2Field("", valueVector2 ?? Vector2.zero).ToString();
                         break;
                 }
-                EditorGUILayout.Space();
-            
-                if (GUILayout.Button("Remove"))
+
+                if (GUILayout.Button("Remove", GUILayout.Width(70)))
                 {
-                    parameterList.Remove(parameter); // パラメーターの削除
+                    parameterData.parameters = parameterData.parameters.Where(p => p != parameter).ToArray();
                 }
-                
-                if (string.IsNullOrEmpty(parameter.key) || string.IsNullOrEmpty(parameter.value) || string.IsNullOrEmpty(parameter.type))
-                {
-                    canApply = false;
-                }
-            
+
                 EditorGUILayout.EndHorizontal();
-                EditorGUILayout.Space();
             }
-            
-            EditorGUILayout.Space();
-            EditorGUILayout.BeginHorizontal();
+
             if (GUILayout.Button("Add Parameter"))
             {
-                parameterList.Add(new ParameterPair());
+                var newList = parameterData.parameters.ToList();
+                newList.Add(new ParameterPair());
+                parameterData.parameters = newList.ToArray();
             }
-            
-            EditorGUILayout.EndHorizontal();
-            
-            EditorGUILayout.Space(10);
-        
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Select Output File"))
+
+            EditorGUILayout.EndVertical(); // End box
+
+            GUILayout.Space(10);
+
+            parameterData.csharpPath = EditorGUILayout.TextField("Output C# File", parameterData.csharpPath);
+            if (GUILayout.Button("Select C# Output File"))
             {
-                string path = EditorUtility.SaveFilePanel("Select output file", "", "", "cs");
+                string path = EditorUtility.SaveFilePanel("Select C# Output File", "", "", "cs");
                 if (!string.IsNullOrEmpty(path))
                 {
-                    output = path;
-                }
-                else
-                {
-                    canApply = false;
+                    parameterData.csharpPath = path;
                 }
             }
-            EditorGUILayout.TextField(output); // 選択したファイルパスを表示
-            EditorGUILayout.EndHorizontal();
-            
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("className");
-            className = Path.GetFileNameWithoutExtension(output);
-            EditorGUILayout.LabelField(className);
-            
-            EditorGUILayout.EndHorizontal();
-            
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("namespace");
-            nameSpace = EditorGUILayout.TextField(nameSpace);
-            if (string.IsNullOrEmpty(nameSpace))
+
+            GUILayout.Space(10);
+
+            parameterData.assetPath = EditorGUILayout.TextField("Output Asset File", parameterData.assetPath);
+            if (GUILayout.Button("Select Asset Output File"))
             {
-                canApply = false;
+                string path = EditorUtility.SaveFilePanel("Select Asset Output File", "", "", "asset");
+                if (!string.IsNullOrEmpty(path))
+                {
+                    parameterData.assetPath = path;
+                }
             }
-            EditorGUILayout.EndHorizontal();
-        
-            parameterData.parameters = parameterList.ToArray();
-            parameterData.outputFileName = output;
-            parameterData.className = className;
-            parameterData.nameSpace = nameSpace;
-            
+
+            GUILayout.Space(10);
+
+            parameterData.className = EditorGUILayout.TextField("Class Name", Path.GetFileNameWithoutExtension(parameterData.csharpPath));
+
+            parameterData.nameSpace = EditorGUILayout.TextField("Namespace", parameterData.nameSpace);
+
+            GUILayout.Space(20);
 
             EditorGUILayout.BeginHorizontal();
-
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Apply"))
+            if (GUILayout.Button("Apply", GUILayout.Width(100)))
             {
-                if (canApply)
-                {
-                    string json = JsonUtility.ToJson(parameterData);
-                    File.WriteAllText(jsonPath, json);
-                    CodeGenerator.GenerateCode(jsonPath, output); 
-                    AssetDatabase.Refresh();
-                }
-                else
-                {
-                    Debug.LogWarning("Please fill all the parameters before applying.");
-                }
-                
+                string json = JsonUtility.ToJson(parameterData);
+                File.WriteAllText(jsonPath, json);
+                CodeGenerator.GenerateCode(jsonPath, parameterData.csharpPath, parameterData.assetPath);
             }
-            EditorGUILayout.Space(10);
-            if (GUILayout.Button("Cancel"))
+
+            if (GUILayout.Button("Cancel", GUILayout.Width(100)))
             {
-                // Reload the JSON data
                 OnEnable();
             }
-            EditorGUILayout.Space(40);
+
             EditorGUILayout.EndHorizontal();
         }
-    
+
+
         // MenuItemのバリデーションメソッド
         [MenuItem("Assets/Edit Parameters", true)]
         private static bool ValidateMenuOption()
@@ -176,7 +148,7 @@ namespace ParamGenerator.Editor
             string path = AssetDatabase.GetAssetPath(Selection.activeObject);
             return path.EndsWith(".json");
         }
-        
+
         public static class MyUtil
         {
             public static Vector3? TryParse3(string a)
@@ -188,18 +160,20 @@ namespace ParamGenerator.Editor
                 if (parts.Length == 3) // x, y, zの3部分があることを確認
                 {
                     float x, y, z;
-                    if (float.TryParse(parts[0].Trim(), out x) && 
-                        float.TryParse(parts[1].Trim(), out y) && 
+                    if (float.TryParse(parts[0].Trim(), out x) &&
+                        float.TryParse(parts[1].Trim(), out y) &&
                         float.TryParse(parts[2].Trim(), out z))
                     {
                         Vector3 result = new Vector3(x, y, z);
                         return result;
                     }
+
                     return null;
                 }
 
                 return null;
             }
+
             public static Vector2? TryParse2(string a)
             {
                 string input = a;
@@ -209,12 +183,13 @@ namespace ParamGenerator.Editor
                 if (parts.Length == 2) // x, y, zの3部分があることを確認
                 {
                     float x, y;
-                    if (float.TryParse(parts[0].Trim(), out x) && 
+                    if (float.TryParse(parts[0].Trim(), out x) &&
                         float.TryParse(parts[1].Trim(), out y))
                     {
                         Vector2 result = new Vector2(x, y);
                         return result;
                     }
+
                     return null;
                 }
 

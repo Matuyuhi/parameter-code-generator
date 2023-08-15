@@ -28,8 +28,10 @@ namespace ParamGenerator.Editor
             JsonObject jsonObject = new JsonObject
             {
                 parameters = Array.Empty<ParameterPair>(),
-                outputFileName = "",
-                className = ""
+                csharpPath = "",
+                className = "",
+                nameSpace = "",
+                assetPath = ""
             };
             
             string templateJson = JsonUtility.ToJson(jsonObject);
