@@ -1,35 +1,28 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
+// ReSharper disable once CheckNamespace
 namespace ParamGenerator.Editor
 {
     public class ParameterEditor : EditorWindow
     {
-        private JsonObject parameterData;
         private string jsonPath;
-
-        [MenuItem("Assets/Edit Parameters")]
-        public static void ShowWindow()
-        {
-            ParameterEditor window = GetWindow<ParameterEditor>("Parameter Editor");
-            window.jsonPath = AssetDatabase.GetAssetPath(Selection.activeObject);
-            window.OnEnable();
-        }
+        private JsonObject parameterData;
 
         private void OnEnable()
         {
-            string json = File.ReadAllText(jsonPath);
+            if (jsonPath == "" || !File.Exists(jsonPath)) return;
+            var json = File.ReadAllText(jsonPath);
             if (json == "") return;
             parameterData = JsonUtility.FromJson<JsonObject>(json);
         }
 
         private void OnGUI()
         {
-            if (jsonPath == "" || parameterData == null) return;
+            if (jsonPath == "" || parameterData == null || !File.Exists(jsonPath)) return;
 
             EditorGUILayout.LabelField(Path.GetFileName(jsonPath), EditorStyles.boldLabel);
 
@@ -46,39 +39,36 @@ namespace ParamGenerator.Editor
                 EditorGUILayout.BeginHorizontal();
 
                 parameter.key = EditorGUILayout.TextField(parameter.key, GUILayout.Width(80));
-                int selectedIndex = EditorGUILayout.Popup(Array.IndexOf(options, parameter.type), options);
-                if (selectedIndex < 0)
-                {
-                    selectedIndex = 0;
-                }
+                var selectedIndex = EditorGUILayout.Popup(Array.IndexOf(options, parameter.type), options);
+                if (selectedIndex < 0) selectedIndex = 0;
 
                 parameter.type = options[selectedIndex];
 
                 switch (parameter.type)
                 {
                     case "float":
-                        parameter.value = EditorGUILayout.FloatField(float.Parse(parameter.value)).ToString();
+                        parameter.value = EditorGUILayout.FloatField(!string.IsNullOrEmpty(parameter.value) ? float.Parse(parameter.value) : 0f)
+                            .ToString();
                         break;
                     case "int":
-                        parameter.value = EditorGUILayout.IntField(int.Parse(parameter.value)).ToString();
+                        parameter.value = EditorGUILayout.IntField(!string.IsNullOrEmpty(parameter.value) ? int.Parse(parameter.value) : 0)
+                            .ToString();
                         break;
                     case "string":
                         parameter.value = EditorGUILayout.TextField(parameter.value);
                         break;
                     case "Vector3":
-                        Vector3? valueVector3 = MyUtil.TryParse3(parameter.value);
+                        var valueVector3 = MyUtil.TryParse3(parameter.value);
                         parameter.value = EditorGUILayout.Vector3Field("", valueVector3 ?? Vector3.zero).ToString();
                         break;
                     case "Vector2":
-                        Vector2? valueVector2 = MyUtil.TryParse2(parameter.value);
+                        var valueVector2 = MyUtil.TryParse2(parameter.value);
                         parameter.value = EditorGUILayout.Vector2Field("", valueVector2 ?? Vector2.zero).ToString();
                         break;
                 }
 
                 if (GUILayout.Button("Remove", GUILayout.Width(70)))
-                {
                     parameterData.parameters = parameterData.parameters.Where(p => p != parameter).ToArray();
-                }
 
                 EditorGUILayout.EndHorizontal();
             }
@@ -97,11 +87,8 @@ namespace ParamGenerator.Editor
             parameterData.csharpPath = EditorGUILayout.TextField("Output C# File", parameterData.csharpPath);
             if (GUILayout.Button("Select C# Output File"))
             {
-                string path = EditorUtility.SaveFilePanel("Select C# Output File", "", "", "cs");
-                if (!string.IsNullOrEmpty(path))
-                {
-                    parameterData.csharpPath = path;
-                }
+                var path = EditorUtility.SaveFilePanel("Select C# Output File", "", "", "cs");
+                if (!string.IsNullOrEmpty(path)) parameterData.csharpPath = MakeRelativePath(Application.dataPath, path);
             }
 
             GUILayout.Space(10);
@@ -109,11 +96,8 @@ namespace ParamGenerator.Editor
             parameterData.assetPath = EditorGUILayout.TextField("Output Asset File", parameterData.assetPath);
             if (GUILayout.Button("Select Asset Output File"))
             {
-                string path = EditorUtility.SaveFilePanel("Select Asset Output File", "", "", "asset");
-                if (!string.IsNullOrEmpty(path))
-                {
-                    parameterData.assetPath = path;
-                }
+                var path = EditorUtility.SaveFilePanel("Select Asset Output File", "", "", "asset");
+                if (!string.IsNullOrEmpty(path)) parameterData.assetPath = MakeRelativePath(Application.dataPath, path);
             }
 
             GUILayout.Space(10);
@@ -127,17 +111,42 @@ namespace ParamGenerator.Editor
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Apply", GUILayout.Width(100)))
             {
-                string json = JsonUtility.ToJson(parameterData);
-                File.WriteAllText(jsonPath, json);
-                CodeGenerator.GenerateCode(jsonPath, parameterData.csharpPath, parameterData.assetPath);
+                var json = JsonUtility.ToJson(parameterData);
+                if (jsonPath != null)
+                {
+                    File.WriteAllText(jsonPath, json);
+                    CodeGenerator.GenerateCode(jsonPath, parameterData.csharpPath, parameterData.assetPath);
+                }
             }
 
-            if (GUILayout.Button("Cancel", GUILayout.Width(100)))
-            {
-                OnEnable();
-            }
+            if (GUILayout.Button("Cancel", GUILayout.Width(100))) OnEnable();
 
             EditorGUILayout.EndHorizontal();
+        }
+
+        // Utility function to convert an absolute path to a relative path.
+        private string MakeRelativePath(string fromPath, string toPath)
+        {
+            if (string.IsNullOrEmpty(fromPath)) throw new ArgumentNullException("fromPath");
+            if (string.IsNullOrEmpty(toPath)) throw new ArgumentNullException("toPath");
+
+            var fromUri = new Uri(fromPath);
+            var toUri = new Uri(toPath);
+
+            if (fromUri.Scheme != toUri.Scheme) return toPath; // path can't be made relative.
+
+            var relativeUri = fromUri.MakeRelativeUri(toUri);
+            var relativePath = Uri.UnescapeDataString(relativeUri.ToString());
+
+            return relativePath;
+        }
+
+        [MenuItem("Assets/Edit Parameters")]
+        public static void ShowWindow()
+        {
+            var window = GetWindow<ParameterEditor>("Parameter Editor");
+            window.jsonPath = AssetDatabase.GetAssetPath(Selection.activeObject);
+            window.OnEnable();
         }
 
 
@@ -145,26 +154,25 @@ namespace ParamGenerator.Editor
         [MenuItem("Assets/Edit Parameters", true)]
         private static bool ValidateMenuOption()
         {
-            string path = AssetDatabase.GetAssetPath(Selection.activeObject);
+            var path = AssetDatabase.GetAssetPath(Selection.activeObject);
             return path.EndsWith(".json");
         }
 
-        public static class MyUtil
+        private static class MyUtil
         {
             public static Vector3? TryParse3(string a)
             {
-                string input = a;
+                var input = a;
                 input = input.Trim('(', ')'); // 括弧を削除
-                string[] parts = input.Split(','); // カンマで分割
+                var parts = input.Split(','); // カンマで分割
 
                 if (parts.Length == 3) // x, y, zの3部分があることを確認
                 {
-                    float x, y, z;
-                    if (float.TryParse(parts[0].Trim(), out x) &&
-                        float.TryParse(parts[1].Trim(), out y) &&
-                        float.TryParse(parts[2].Trim(), out z))
+                    if (float.TryParse(parts[0].Trim(), out var x) &&
+                        float.TryParse(parts[1].Trim(), out var y) &&
+                        float.TryParse(parts[2].Trim(), out var z))
                     {
-                        Vector3 result = new Vector3(x, y, z);
+                        var result = new Vector3(x, y, z);
                         return result;
                     }
 
@@ -176,17 +184,16 @@ namespace ParamGenerator.Editor
 
             public static Vector2? TryParse2(string a)
             {
-                string input = a;
+                var input = a;
                 input = input.Trim('(', ')'); // 括弧を削除
-                string[] parts = input.Split(','); // カンマで分割
+                var parts = input.Split(','); // カンマで分割
 
                 if (parts.Length == 2) // x, y, zの3部分があることを確認
                 {
-                    float x, y;
-                    if (float.TryParse(parts[0].Trim(), out x) &&
-                        float.TryParse(parts[1].Trim(), out y))
+                    if (float.TryParse(parts[0].Trim(), out var x) &&
+                        float.TryParse(parts[1].Trim(), out var y))
                     {
-                        Vector2 result = new Vector2(x, y);
+                        var result = new Vector2(x, y);
                         return result;
                     }
 

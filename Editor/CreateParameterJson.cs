@@ -1,8 +1,9 @@
 using System;
-using UnityEditor;
 using System.IO;
+using UnityEditor;
 using UnityEngine;
 
+// ReSharper disable once CheckNamespace
 namespace ParamGenerator.Editor
 {
     public static class CreateTemplateJson
@@ -11,7 +12,7 @@ namespace ParamGenerator.Editor
         public static void CreateJson()
         {
             // ファイル保存ダイアログを表示
-            string path = EditorUtility.SaveFilePanel(
+            var path = EditorUtility.SaveFilePanel(
                 "Save JSON file",
                 AssetDatabase.GetAssetPath(Selection.activeObject),
                 "",
@@ -19,13 +20,10 @@ namespace ParamGenerator.Editor
             );
 
             // ユーザーがキャンセルした場合、パスが空になる
-            if (string.IsNullOrEmpty(path))
-            {
-                return;
-            }
+            if (string.IsNullOrEmpty(path)) return;
 
             // 新しいJsonObjectを作成
-            JsonObject jsonObject = new JsonObject
+            var jsonObject = new JsonObject
             {
                 parameters = Array.Empty<ParameterPair>(),
                 csharpPath = "",
@@ -33,11 +31,11 @@ namespace ParamGenerator.Editor
                 nameSpace = "",
                 assetPath = ""
             };
-            
-            string templateJson = JsonUtility.ToJson(jsonObject);
-            
+
+            var templateJson = JsonUtility.ToJson(jsonObject);
+
             File.WriteAllText(path, templateJson);
-            
+
             AssetDatabase.Refresh();
         }
     }

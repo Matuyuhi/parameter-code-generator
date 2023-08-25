@@ -1,103 +1,87 @@
 using System;
 using System.IO;
-using System.Reflection;
 using System.Text.RegularExpressions;
-using Unity.VisualScripting;
 using UnityEditor;
 using UnityEngine;
 
+// ReSharper disable once CheckNamespace
 namespace ParamGenerator.Editor
 {
-    public static class CodeGenerator
+    internal static class CodeGenerator
     {
-        private static JsonObject jsonObject;
-        private static string outputPath;
-        private static string outputAsset;
-
         public static void GenerateCode(string jsonPath, string outputPath, string assetPath)
         {
             try
             {
-                CodeGenerator.outputPath = outputPath;
-                outputAsset = assetPath;
-                
-                string json = File.ReadAllText(jsonPath);
+                GeneratingFlagHolder.instance.OutputPath = assetPath;
 
-                jsonObject = JsonUtility.FromJson<JsonObject>(json);
+                var json = File.ReadAllText(jsonPath);
 
-                string code = $"using UnityEngine;\n";
-                string doName = "";
+                GeneratingFlagHolder.instance.Json = json;
+
+                var jsonObject = JsonUtility.FromJson<JsonObject>(json);
+
+                var code = "using UnityEngine;\n";
+                var doName = "";
                 if (jsonObject.nameSpace != "")
                 {
                     code += $"namespace {jsonObject.nameSpace}\n{{\n    ";
                     doName = "    ";
                 }
-                if (string.IsNullOrEmpty(jsonObject.className))
-                {
-                    throw new Exception("Not Found ClassName");
-                }
+
+                if (string.IsNullOrEmpty(jsonObject.className)) throw new Exception("Not Found ClassName");
                 code += $"public class {jsonObject.className} : ScriptableObject\n{doName}{{\n";
                 foreach (var parameter in jsonObject.parameters)
                 {
-                    string key = parameter.key;
-                    string type = parameter.type;
-                    string valueString = parameter.value;
-                    if (string.IsNullOrEmpty(parameter.key) || string.IsNullOrEmpty(parameter.value) || string.IsNullOrEmpty(parameter.type))
-                    {
-                        continue;
-                    }
-                    string value = ConvertValue(type, valueString);
+                    var key = parameter.key;
+                    var type = parameter.type;
+                    var valueString = parameter.value;
+                    if (string.IsNullOrEmpty(parameter.key) || string.IsNullOrEmpty(parameter.value) ||
+                        string.IsNullOrEmpty(parameter.type)) continue;
+                    var value = ConvertValue(type, valueString);
                     code += $"    {doName}public {type} {key} = {value};\n\n";
                 }
 
-                if (jsonObject.nameSpace != "")
-                {
-                    code += "    }\n";
-                }
+                if (jsonObject.nameSpace != "") code += "    }\n";
 
                 code += "}";
-                
+
                 File.WriteAllText(outputPath, code);
+
+                GeneratingFlagHolder.instance.IsGenerating = true;
+
                 AssetDatabase.Refresh();
-
-                EditorApplication.update += WaitForCompile;
-
-
-
             }
             catch (Exception e)
             {
                 Debug.LogError(e);
-                AssetDatabase.Refresh();
-            }
-            finally
-            {
-                AssetDatabase.Refresh();
+                //AssetDatabase.Refresh();
             }
         }
 
+        [InitializeOnLoadMethod]
         private static void WaitForCompile()
         {
             try
             {
-                if (EditorApplication.isCompiling)
+                if (!GeneratingFlagHolder.instance.IsGenerating)
                     return;
 
-                EditorApplication.update -= WaitForCompile;
-                
-                string qualifiedTypeName = (jsonObject.nameSpace != "" ? jsonObject.nameSpace + "." : "") + jsonObject.className;
+                GeneratingFlagHolder.instance.IsGenerating = false;
+
+                var jsonObject = JsonUtility.FromJson<JsonObject>(GeneratingFlagHolder.instance.Json);
+
+                var qualifiedTypeName = (jsonObject.nameSpace != "" ? jsonObject.nameSpace + "." : "") + jsonObject.className;
                 Type generatedType = null;
 
-                foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    foreach (Type type in asm.GetTypes())
-                    {
+                    foreach (var type in asm.GetTypes())
                         if (type.FullName == qualifiedTypeName)
                         {
                             generatedType = type;
                             break;
                         }
-                    }
 
                     if (generatedType != null)
                         break;
@@ -105,25 +89,25 @@ namespace ParamGenerator.Editor
 
                 if (generatedType != null)
                 {
-                    ScriptableObject asset = ScriptableObject.CreateInstance(generatedType);
-                    string assetPath = outputAsset;
+                    var asset = ScriptableObject.CreateInstance(generatedType);
+                    var assetPath = GeneratingFlagHolder.instance.OutputPath;
                     AssetDatabase.CreateAsset(asset, assetPath);
-                    Debug.Log("Generated type: " + generatedType);
-                    Debug.Log("Asset path: " + assetPath);
 
                     AssetDatabase.Refresh();
                 }
                 else
                 {
                     Debug.LogError("Generated type not found");
+                    GeneratingFlagHolder.instance.IsGenerating = false;
                 }
+
+                EditorApplication.update -= WaitForCompile;
             }
             catch (Exception e)
             {
                 Debug.LogError(e);
             }
         }
-        
 
 
         private static string ConvertValue(string type, string valueString)
@@ -135,15 +119,53 @@ namespace ParamGenerator.Editor
                 case "string": return $"\"{valueString}\"";
                 case "Vector3":
                 {
-                    string modifiedInput = Regex.Replace(valueString, @"(\d+\.\d+)", "$1f");
+                    var modifiedInput = Regex.Replace(valueString, @"(\d+\.\d+)", "$1f");
                     return $"new Vector3{modifiedInput}";
                 }
                 case "Vector2":
                 {
-                    string modifiedInput = Regex.Replace(valueString, @"(\d+\.\d+)", "$1f");
+                    var modifiedInput = Regex.Replace(valueString, @"(\d+\.\d+)", "$1f");
                     return $"new Vector2{modifiedInput}";
                 }
                 default: return valueString;
+            }
+        }
+
+        internal class GeneratingFlagHolder : ScriptableSingleton<GeneratingFlagHolder>
+        {
+            private bool isGenerating;
+            private string json;
+
+            private string outputPath;
+
+            public bool IsGenerating
+            {
+                get => isGenerating;
+                set
+                {
+                    isGenerating = value;
+                    Save(false);
+                }
+            }
+
+            public string Json
+            {
+                get => json;
+                set
+                {
+                    json = value;
+                    Save(false);
+                }
+            }
+
+            public string OutputPath
+            {
+                get => outputPath;
+                set
+                {
+                    outputPath = value;
+                    Save(false);
+                }
             }
         }
     }
@@ -154,7 +176,6 @@ namespace ParamGenerator.Editor
         public string key;
         public string type;
         public string value;
-        
     }
 
     [Serializable]
